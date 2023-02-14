@@ -686,6 +686,7 @@ HAL_StatusTypeDef HAL_UART_DeInit(UART_HandleTypeDef *huart)
   huart->gState = HAL_UART_STATE_RESET;
   huart->RxState = HAL_UART_STATE_RESET;
   huart->ReceptionType = HAL_UART_RECEPTION_STANDARD;
+  huart->RxEventType = HAL_UART_RXEVENT_TC;
 
   /* Process Unlock */
   __HAL_UNLOCK(huart);
@@ -1628,6 +1629,7 @@ HAL_StatusTypeDef HAL_UARTEx_ReceiveToIdle(UART_HandleTypeDef *huart, uint8_t *p
     huart->ErrorCode = HAL_UART_ERROR_NONE;
     huart->RxState = HAL_UART_STATE_BUSY_RX;
     huart->ReceptionType = HAL_UART_RECEPTION_TOIDLE;
+    huart->RxEventType = HAL_UART_RXEVENT_TC;
 
     /* Init tickstart for timeout management */
     tickstart = HAL_GetTick();
@@ -1665,6 +1667,7 @@ HAL_StatusTypeDef HAL_UARTEx_ReceiveToIdle(UART_HandleTypeDef *huart, uint8_t *p
         /* If Set, and data has already been received, this means Idle Event is valid : End reception */
         if (*RxLen > 0U)
         {
+          huart->RxEventType = HAL_UART_RXEVENT_IDLE;
           huart->RxState = HAL_UART_STATE_READY;
 
           return HAL_OK;
@@ -1751,6 +1754,7 @@ HAL_StatusTypeDef HAL_UARTEx_ReceiveToIdle_IT(UART_HandleTypeDef *huart, uint8_t
 
     /* Set Reception type to reception till IDLE Event*/
     huart->ReceptionType = HAL_UART_RECEPTION_TOIDLE;
+    huart->RxEventType = HAL_UART_RXEVENT_TC;
 
     status =  UART_Start_Receive_IT(huart, pData, Size);
 
@@ -1812,6 +1816,7 @@ HAL_StatusTypeDef HAL_UARTEx_ReceiveToIdle_DMA(UART_HandleTypeDef *huart, uint8_
 
     /* Set Reception type to reception till IDLE Event*/
     huart->ReceptionType = HAL_UART_RECEPTION_TOIDLE;
+    huart->RxEventType = HAL_UART_RXEVENT_TC;
 
     status =  UART_Start_Receive_DMA(huart, pData, Size);
 
@@ -1840,6 +1845,39 @@ HAL_StatusTypeDef HAL_UARTEx_ReceiveToIdle_DMA(UART_HandleTypeDef *huart, uint8_
     return HAL_BUSY;
   }
 }
+
+
+/**
+  * @brief Provide Rx Event type that has lead to RxEvent callback execution.
+  * @note  When HAL_UARTEx_ReceiveToIdle_IT() or HAL_UARTEx_ReceiveToIdle_DMA() API are called, progress
+  *        of reception process is provided to application through calls of Rx Event callback (either default one
+  *        HAL_UARTEx_RxEventCallback() or user registered one). As several types of events could occur (IDLE event,
+  *        Half Transfer, or Transfer Complete), this function allows to retrieve the Rx Event type that has lead
+  *        to Rx Event callback execution.
+  * @note  This function is expected to be called within the user implementation of Rx Event Callback,
+  *        in order to provide the accurate value :
+  *        In Interrupt Mode :
+  *           - HAL_UART_RXEVENT_TC : when Reception has been completed (expected nb of data has been received)
+  *           - HAL_UART_RXEVENT_IDLE : when Idle event occurred prior reception has been completed (nb of
+  *             received data is lower than expected one)
+  *        In DMA Mode :
+  *           - HAL_UART_RXEVENT_TC : when Reception has been completed (expected nb of data has been received)
+  *           - HAL_UART_RXEVENT_HT : when half of expected nb of data has been received
+  *           - HAL_UART_RXEVENT_IDLE : when Idle event occurred prior reception has been completed (nb of
+  *             received data is lower than expected one).
+  *        In DMA mode, RxEvent callback could be called several times;
+  *        When DMA is configured in Normal Mode, HT event does not stop Reception process;
+  *        When DMA is configured in Circular Mode, HT, TC or IDLE events don't stop Reception process;
+  * @param  huart UART handle.
+  * @retval Rx Event Type (return vale will be a value of @ref UART_RxEvent_Type_Values)
+  */
+HAL_UART_RxEventTypeTypeDef HAL_UARTEx_GetRxEventType(UART_HandleTypeDef *huart)
+{
+  /* Return Rx Event type value, as stored in UART handle */
+  return(huart->RxEventType);
+}
+
+
 
 /**
   * @brief  Abort ongoing transfers (blocking mode).
@@ -2511,6 +2549,10 @@ void HAL_UART_IRQHandler(UART_HandleTypeDef *huart)
           /* Last bytes received, so no need as the abort is immediate */
           (void)HAL_DMA_Abort(huart->hdmarx);
         }
+
+        /* Initialize type of RxEvent that correspond to RxEvent callback execution;
+           In this case, Rx Event type is Idle Event */
+        huart->RxEventType = HAL_UART_RXEVENT_IDLE;
 #if (USE_HAL_UART_REGISTER_CALLBACKS == 1)
         /*Call registered Rx Event callback*/
         huart->RxEventCallback(huart, (huart->RxXferSize - huart->RxXferCount));
@@ -2541,6 +2583,10 @@ void HAL_UART_IRQHandler(UART_HandleTypeDef *huart)
         huart->ReceptionType = HAL_UART_RECEPTION_STANDARD;
 
         CLEAR_BIT(huart->Instance->CR1, USART_CR1_IDLEIE);
+
+        /* Initialize type of RxEvent that correspond to RxEvent callback execution;
+           In this case, Rx Event type is Idle Event */
+        huart->RxEventType = HAL_UART_RXEVENT_IDLE;
 #if (USE_HAL_UART_REGISTER_CALLBACKS == 1)
         /*Call registered Rx complete callback*/
         huart->RxEventCallback(huart, nb_rx_data);
@@ -3048,6 +3094,9 @@ static void UART_DMAReceiveCplt(DMA_HandleTypeDef *hdma)
     }
   }
 
+  /* Initialize type of RxEvent that correspond to RxEvent callback execution;
+     In this case, Rx Event type is Transfer Complete */
+  huart->RxEventType = HAL_UART_RXEVENT_TC;
   /* Check current reception Mode :
      If Reception till IDLE event has been selected : use Rx Event callback */
   if (huart->ReceptionType == HAL_UART_RECEPTION_TOIDLE)
@@ -3083,6 +3132,9 @@ static void UART_DMARxHalfCplt(DMA_HandleTypeDef *hdma)
 {
   UART_HandleTypeDef *huart = (UART_HandleTypeDef *)((DMA_HandleTypeDef *)hdma)->Parent;
 
+  /* Initialize type of RxEvent that correspond to RxEvent callback execution;
+     In this case, Rx Event type is Half Transfer */
+  huart->RxEventType = HAL_UART_RXEVENT_HT;
   /* Check current reception Mode :
      If Reception till IDLE event has been selected : use Rx Event callback */
   if (huart->ReceptionType == HAL_UART_RECEPTION_TOIDLE)
