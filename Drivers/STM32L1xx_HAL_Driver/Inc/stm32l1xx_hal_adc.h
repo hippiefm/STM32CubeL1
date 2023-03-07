@@ -234,6 +234,8 @@ typedef struct __ADC_HandleTypeDef
 
   __IO uint32_t                 ErrorCode;              /*!< ADC Error code */
 
+  void                          *pUserPtr;              /*!< Pointer to the user context        */
+
 #if (USE_HAL_ADC_REGISTER_CALLBACKS == 1)
   void (* ConvCpltCallback)(struct __ADC_HandleTypeDef *hadc);              /*!< ADC conversion complete callback */
   void (* ConvHalfCpltCallback)(struct __ADC_HandleTypeDef *hadc);          /*!< ADC conversion DMA half-transfer callback */
