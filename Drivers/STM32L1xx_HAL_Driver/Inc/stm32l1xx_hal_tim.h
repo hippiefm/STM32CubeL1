@@ -286,6 +286,7 @@ typedef struct
   __IO HAL_TIM_StateTypeDef          State;             /*!< TIM operation state                               */
   __IO HAL_TIM_ChannelStateTypeDef   ChannelState[4];   /*!< TIM channel operation state                       */
   __IO HAL_TIM_DMABurstStateTypeDef  DMABurstState;     /*!< DMA burst operation state                         */
+  void                               *pUserPtr;         /*!< Pointer to the user context                       */
 
 #if (USE_HAL_TIM_REGISTER_CALLBACKS == 1)
   void (* Base_MspInitCallback)(struct __TIM_HandleTypeDef *htim);              /*!< TIM Base Msp Init Callback                              */
